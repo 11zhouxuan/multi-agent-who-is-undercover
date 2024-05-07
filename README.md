@@ -5,7 +5,8 @@
 ## 安装
 ```pip install -r requirements.txt```
 
-## 修改.env
+## 定义AWS环境变量 
+在本地文件夹生成 **.env** 文件, 并写入下面的内容:
 
 ```
 AWS_ACCESS_KEY_ID="xxxxx"
