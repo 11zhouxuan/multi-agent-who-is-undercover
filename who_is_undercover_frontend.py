@@ -34,11 +34,6 @@ if "undercover_word" not in st.session_state:
 if "common_word" not in st.session_state:
     st.session_state['common_word'] = '李宗伟'
 
-# if 'is_next_turn' not in st.session_state:
-#     st.session_state.is_next_turn = False 
-
-# if 'is_reset_game' not in st.session_state:
-#     st.session_state.is_reset_game = False
 
 def start_new_game():
     msg = st.toast(f'正在开始新游戏。。。')
@@ -62,17 +57,16 @@ def next_turn():
     st.toast(f'Players 正在做陈述。。。')
     for player_statement in game_obj.next_turn_statement():
         player:Player = player_statement['player']
-        st.toast(f'Player {player.player_id} 完成陈述。')
-        # current_turn:int = player_statement['current_turn']
-        # statement:str = player_statement['statement']
+        if player.active:
+            st.toast(f'Player {player.player_id} 完成陈述。')
+       
         with palyer_tabs[player.index]:
-            # msg.toast(f'Player {player.player_id} 完成陈述。')
             for his in player.history:
                 with st.chat_message('user'):
-                    # st.write(his['statement']) 
                     
-                    with st.expander(his['statement']): 
+                    with st.popover(his['statement']):
                         st.markdown(f"**Thinking:** {player.history[-1]['thinking']}") 
+                
 
     st.toast(f'Players 正在投票。。。')
     # vote 
@@ -80,18 +74,20 @@ def next_turn():
         st.write(f"第{game_obj.current_turn}轮投票结果")
         for player_vote in game_obj.next_turn_vote():
             player: Player = player_vote['player']
-            # st.write(f'Player {player.player_id} 投票给 Player {player_vote["vote"]}')
-            with st.expander(f'Player {player.player_id} 投票给 Player {player_vote["vote"]}'):
-                st.markdown(f"**Thinking:** {player.vote_history[-1]['thinking']}") 
+            with st.popover(f'Player {player.player_id} 投票给 Player {player_vote["vote"]}'):
+                
+                st.markdown(f"**Thinking:** {player.vote_history[-1]['thinking']}")
 
-            # st.toast(f'Player {player.player_id} 投票给 Player {player_vote["vote"]}')
+            st.toast(f'Player {player.player_id} 完成投票。')
          
         out_player = game_obj.execute_vote_result()
         st.write(f'Player {out_player.player_id} 被投票出局！')
         
         game_obj.current_turn += 1
         if game_obj.is_game_close():
+            st.toast(f'游戏结束')
             st.write(game_obj.game_status)
+            st.write(f'平民词: {game_obj.common_word}, 卧底词: {game_obj.undercover_word}')
             st.balloons()
             st.session_state['is_game_close'] = True
 
@@ -132,12 +128,11 @@ if st.session_state.is_new_game:
     palyer_tabs = st.tabs(tab_names)
 
 if not st.session_state.is_new_game:
-    undercover_word = st.text_input(label='卧底词语',key="undercover_word") # value=st.session_state['undercover_word'])
-    common_word = st.text_input(label='平民词语',key="common_word")# value=st.session_state['common_word'])
+    undercover_word = st.text_input(label='卧底词语',key="undercover_word")
+    common_word = st.text_input(label='平民词语',key="common_word")
 
 
 if not st.session_state.is_new_game:
-    # st.toast(f'请设置平民和卧底词汇，按“New game”开始游戏。')
     new_game_alert = st.info(f'请设置平民和卧底词汇, 点击 “New game” 开始游戏。')
 
 

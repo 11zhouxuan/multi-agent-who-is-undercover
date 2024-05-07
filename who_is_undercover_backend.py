@@ -35,6 +35,12 @@ prompt_statement = '''
 - 一次描述只描述一个特征。
 - 不可以和历史发言重复。
 
+
+下面有一些游戏策略可供参考:
+<strategy>
+- 如果你认为你是卧底，你可以尽量参考其他人的描述，以此来隐藏自己的身份。
+</strategy>
+
 你拿到的词语是：
 {word}
 
@@ -317,9 +323,11 @@ class WhoIsUndercover:
     def next_turn_statement(self):
         for player in self.players:
             if not player.active:
-                continue
+                statement = None
+            else:
+                statement = self.player_statement(player)
             yield {
                   'player': player,
                   'current_turn': self.current_turn,
-                  'statement':self.player_statement(player)
+                  'statement': statement
                 }
