@@ -6,13 +6,17 @@
 ```pip install -r requirements.txt```
 
 ## 定义AWS环境变量 
-在本地文件夹生成 **.env** 文件, 并写入下面的内容:
+- 在当前目录下生成 **.env** 文件
 
-```
-AWS_ACCESS_KEY_ID="xxxxx"
-AWS_SECRET_ACCESS_KEY="xxxxx"
-AWS_REGION="xxxxxx"
-```
+     ```touch .env```
+
+- 写入下面的内容
+
+    ```
+    AWS_ACCESS_KEY_ID=<your aws_access_key_id>
+    AWS_SECRET_ACCESS_KEY=<your aws_secret_access_key>
+    AWS_REGION=<aws_region>
+    ```
 
 ## 运行
 ```streamlit run who_is_undercover_frontend.py```
