@@ -11,76 +11,18 @@ import boto3
 from logger import get_logger
 logger = get_logger("backend")
 
-policy_prompt = '''《谁是卧底》是一款多人社交推理游戏。在这个版本中，共有6名玩家参与。
-游戏开始时，游戏主持人会为每位玩家分配一个身份和一个词语。玩家的身份分为“平民”和“卧底”。在这个游戏中，有5个平民和1个卧底。
-在游戏中，所有平民玩家会得到相同的词语，而卧底玩家的词语会与平民玩家的词语相关但不完全相同。
-平民玩家需要尽可能找出谁是卧底，然后在投票环节集中将卧底投出去。
-卧底玩家要尽可能隐藏自己卧底身份。
-游戏开始后，每位玩家轮流描述自己得到的词语，但不能直接提及该词。所有玩家都需要通过其他玩家的描述，进行分析和推理，以找出可能是卧底的人。
-每轮描述结束后，所有玩家投票选择他们认为最可疑的玩家，得票最多的玩家被淘汰。如果淘汰的是卧底，则游戏结束，平民方获胜；如果淘汰的是平民，则游戏继续进行，直到卧底被淘汰，或者卧底和平民的人数相等。此时，卧底方获胜。
-'''.strip()
+policy_prompt = open("prompt/policy.txt").read()
 
+prompt_general_statement = open("prompt/describe_general.txt").read()
+prompt_chinaware_statement = open("prompt/describe_chinaware.txt").read()
+prompt_general_preference_statement = open("prompt/describe_general_preference.txt").read()
+prompt_chinaware_preference_statement = open("prompt/describe_chinaware_preference.txt").read()
 
-prompt_statement = '''
-现在你是一名《谁是卧底》游戏中的玩家，
+prompt_general_vote = open("prompt/vote_general.txt").read()
+prompt_chinaware_vote = open("prompt/vote_chinaware.txt").read()
 
-这款游戏的规则如下：
-<policy>
-{policy}
-</policy>
-在描述时有一些要求：
-- 在你描述词语时，尽量用模糊的方式描述，不要直接提及词语。
-- 保持回答简洁，并使用一些模棱两可的词汇，让其他玩家难以准确判断你的身份。
-- 你的描述请保持一句话。
-- 一次描述只描述一个特征。
-- 不可以和历史发言重复。
+chinaware_knowledge = open("prompt/knowledge.txt").read()
 
-
-下面有一些游戏策略可供参考:
-<strategy>
-- 如果你认为你是卧底，你可以尽量参考其他人的描述，以此来隐藏自己的身份。
-</strategy>
-
-你拿到的词语是：
-{word}
-
-下面是各个玩家的发言，你是user_{uid}
-<history>
-{history}
-</history>
-
-现在是第{turn_id}轮游戏的描述环节（turn_{turn_id}），请先在<thinking></thinking>xml tag中写出你的分析，例如，你猜测每个玩家拿到了什么词；根据你拿到的词和其他玩家的词，判断你是普通玩家还是卧底。
-然后在<output></output>xml tag中给出你的描述。如果你认为自己是卧底，注意隐藏自己的身份。
-'''.strip()
-
-
-prompt_vote = '''
-现在你是一名《谁是卧底》游戏中的玩家
-《谁是卧底》游戏的规则如下：
-<policy>
-{policy}
-</policy>
-
-你拿到的词语是：{word}
-
-下面是各个玩家的发言，你是user_{uid}
-<history>
-{history}
-</history>
-
-
-现在是第{turn_id}轮游戏的投票环节（turn_{turn_id}）.
-当前还在场上的玩家有:
-<active_players>
-{active_players}
-</active_players>
-请先在<thinking></thinking>xml tag中写出你的分析，例如，你猜测每个玩家拿到了什么词；根据你拿到的词和其他玩家的词，判断你是普通玩家还是卧底；如果你不是卧底，找到最像卧底的那个玩家。如果你是卧底，找到除你之外最像卧底的那个玩家。
-然后在<output></output>xml tag中给出你认为是卧底的玩家。你必须从还在场上的玩家中，也就是:
-<active_players>
-{active_players}
-</active_players>
-选择一位进行投票，不可以弃权。也不可以投票给你自己。
-'''.strip()
 
 
 def format_history(history:list[dict]):
@@ -95,25 +37,59 @@ def format_history(history:list[dict]):
     return cur_history
 
 
-def build_statement_prompt(word:str,user_id,turn_id,history:list[dict]):
-    return prompt_statement.format(
-        policy=policy_prompt, 
-        word=word, 
-        uid=user_id, 
-        history=format_history(history).strip(), 
-        turn_id=turn_id
-        )
+def build_statement_prompt(word:str,user_id,turn_id,history:list[dict],is_about_chinaware=False,is_second_order=False,second_agent_prefer_words=None):
+    if is_about_chinaware:
+        if is_second_order:
+            logger.info(f'第一轮第二个Agent偏好: {second_agent_prefer_words},user_id: {user_id}')
+            return prompt_general_preference_statement.format(
+                policy=policy_prompt, 
+                word=word, 
+                uid=user_id, 
+                history=format_history(history).strip(), 
+                turn_id=turn_id,
+                preference=second_agent_prefer_words,
+                knowledge = chinaware_knowledge
+            )
+        else:
+            return prompt_chinaware_statement.format(
+                policy=policy_prompt, 
+                word=word, 
+                uid=user_id, 
+                history=format_history(history).strip(), 
+                turn_id=turn_id,
+                knowledge = chinaware_knowledge
+            )
+        
+    else:
+        return prompt_general_statement.format(
+            policy=policy_prompt, 
+            word=word, 
+            uid=user_id, 
+            history=format_history(history).strip(), 
+            turn_id=turn_id
+            )
 
-def build_vote_prompt(word:str,user_id,turn_id,history:list[dict],active_players:list[str]):
+def build_vote_prompt(word:str,user_id,turn_id,history:list[dict],active_players:list[str],is_about_chinaware=False):
     assert isinstance(active_players,list),active_players
-    return prompt_vote.format(
-        policy=policy_prompt, 
-        word=word, 
-        uid=user_id, 
-        history=format_history(history).strip(), 
-        turn_id=turn_id,
-        active_players="\n".join(active_players)
+    if is_about_chinaware:
+        return prompt_general_vote.format(
+            policy=policy_prompt, 
+            word=word, 
+            uid=user_id, 
+            history=format_history(history).strip(), 
+            turn_id=turn_id,
+            active_players="\n".join(active_players),
+            knowledge = chinaware_knowledge
         )
+    else:
+        return prompt_general_vote.format(
+            policy=policy_prompt, 
+            word=word, 
+            uid=user_id, 
+            history=format_history(history).strip(), 
+            turn_id=turn_id,
+            active_players="\n".join(active_players),
+            )
 
 class Player(BaseModel):
     index: int 
@@ -138,9 +114,13 @@ class WhoIsUndercover:
                         "top_p": 1,
                         "stop_sequences": ["\n\nHuman:", "\n\nAssistant"],
                         "anthropic_version": "bedrock-2023-05-31"
-                }
+                },
+                is_about_chinaware=False,
+                second_agent_prefer_words=None
                 ) -> None:
         assert player_num > 2, player_num
+        self.second_agent_prefer_words = second_agent_prefer_words
+        self.is_about_chinaware = is_about_chinaware
         self.player_num = player_num
         self.common_word = common_word
         self.undercover_word = undercover_word
@@ -212,13 +192,19 @@ class WhoIsUndercover:
 
     def player_statement(self, player:Player):
         word = player.word
-
+        is_second_order = False 
+        if self.current_turn == 1 and player.index == 1:
+            is_second_order = True
+            
         #  history
         prompt = build_statement_prompt(
             word,
             user_id=player.player_id,
             turn_id=self.current_turn,
-            history=self.collect_history()
+            history=self.collect_history(),
+            is_about_chinaware=self.is_about_chinaware,
+            is_second_order=is_second_order,
+            second_agent_prefer_words=self.second_agent_prefer_words
         )
         content = self.call_llm(prompt,prefill="<thinking>")
 
@@ -242,12 +228,14 @@ class WhoIsUndercover:
     def player_vote(self, player:Player):
         word = player.word
         #  history
+
         prompt = build_vote_prompt(
             word=word,
             user_id=player.player_id,
             turn_id=self.current_turn,
             history=self.collect_history(),
-            active_players=[f"user_{player_id}" for player_id in self.get_active_player_ids]
+            active_players=[f"user_{player_id}" for player_id in self.get_active_player_ids],
+            is_about_chinaware=self.is_about_chinaware
         )
         content = self.call_llm(prompt,prefill="<thinking>")
         result = '<thinking>' + content
