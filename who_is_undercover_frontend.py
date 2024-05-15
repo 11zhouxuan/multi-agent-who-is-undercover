@@ -51,6 +51,8 @@ with st.sidebar:
             "其他"
         ]
     )
+    is_stream = st.radio(label="是否使用流式输出",options=["是","否"])
+
 
 
 if "game_obj" not in st.session_state:
@@ -98,7 +100,8 @@ def start_new_game():
         undercover_word=undercover_word,
         llm_model_id=add_llm,
         is_about_chinaware=getattr(st.session_state,"chinaware_words",False),
-        second_agent_prefer_words=getattr(st.session_state,"second_agent_prefer_words",None)
+        second_agent_prefer_words=getattr(st.session_state,"second_agent_prefer_words",None),
+        stream = True if is_stream=="是" else False
     )
     st.session_state['game_obj'] = obj
     st.session_state.is_new_game = True
@@ -110,37 +113,56 @@ def next_turn():
     st.toast(f'Players 正在做陈述。。。')
     for player_statement in game_obj.next_turn_statement():
         player:Player = player_statement['player']
+        with palyer_tabs[player.index]:
+            # 展示所有的历史消息
+            for i,his in enumerate(player.history):
+                with st.chat_message('user'):
+                    if not game_obj.stream:
+                        with st.popover(his['statement']):
+                            st.markdown(f"**Thinking:** {his['thinking']}") 
+                    else:
+                        with st.container(border=True):
+                            with st.expander("Thinking",expanded=True if i == len(player.history)-1 else False):
+                                st.write_stream(his['thinking'])
+
+                            with st.container(border=True):
+                                st.write_stream(his['statement'])
         if player.active:
             st.toast(f'Player {player.player_id} 完成陈述。')
        
-        with palyer_tabs[player.index]:
-            for his in player.history:
-                with st.chat_message('user'):
-                    with st.popover(his['statement']):
-                        st.markdown(f"**Thinking:** {player.history[-1]['thinking']}") 
-                
     st.toast(f'Players 正在投票。。。')
     # vote 
     with system_console.container():
         st.write(f"第{game_obj.current_turn}轮投票结果")
+        res_container = st.empty()
         for player_vote in game_obj.next_turn_vote():
             player: Player = player_vote['player']
-            with st.popover(f'Player {player.player_id} 投票给 Player {player_vote["vote"]}'):
-                
-                st.markdown(f"**Thinking:** {player.vote_history[-1]['thinking']}")
-
+            if not game_obj.stream:
+                with st.popover(f'Player {player.player_id} 投票给 Player {player.vote_history[-1]["vote"]}'):
+                    st.markdown(f"**Thinking:** {player.vote_history[-1]['thinking']}")
+            else:
+                with st.container(border=True):
+                    # st.markdown(f"**Player {player.player_id} Thinking**")
+                    with st.expander(f"**Player {player.player_id} Thinking**",expanded=True):
+                        st.write_stream(player.vote_history[-1]['thinking'])
+                    # vote 比较短，直接输出
+                    vote = ""
+                    for vote_s in player.vote_history[-1]["vote"]:
+                        vote += vote_s
+                    with st.container(border=True):
+                        st.write(f'Player {player.player_id} 投票给 Player {vote.replace("user_","")}')
             st.toast(f'Player {player.player_id} 完成投票。')
          
         out_player = game_obj.execute_vote_result()
-        st.write(f'Player {out_player.player_id} 被投票出局！')
-        
-        game_obj.current_turn += 1
-        if game_obj.is_game_close():
-            st.toast(f'游戏结束')
-            st.write(game_obj.game_status)
-            st.write(f'平民词: {game_obj.common_word}, 卧底词: {game_obj.undercover_word}')
-            st.balloons()
-            st.session_state['is_game_close'] = True
+        with res_container.container(border=True):
+            st.write(f'Player {out_player.player_id} 被投票出局！')
+            game_obj.current_turn += 1
+            if game_obj.is_game_close():
+                st.toast(f'游戏结束')
+                st.write(game_obj.game_status)
+                st.write(f'平民词: {game_obj.common_word}, 卧底词: {game_obj.undercover_word}')
+                st.balloons()
+                st.session_state['is_game_close'] = True
 
 
 def reset_game():

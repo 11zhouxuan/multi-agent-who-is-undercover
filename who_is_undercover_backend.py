@@ -5,23 +5,29 @@ from pydantic import BaseModel,Field
 from langchain_community.chat_models.bedrock import BedrockChat
 from langchain_core.messages import SystemMessage,AIMessage,HumanMessage 
 import re 
+from functools import partial
 import os
+from typing import Iterable
+import threading   
+from queue import Queue  
 from collections import defaultdict
 import boto3
 from logger import get_logger
 logger = get_logger("backend")
 
-policy_prompt = open("prompt/policy.txt").read()
+open_utf8 = partial(open,encoding='utf-8')
 
-prompt_general_statement = open("prompt/describe_general.txt").read()
-prompt_chinaware_statement = open("prompt/describe_chinaware.txt").read()
-prompt_general_preference_statement = open("prompt/describe_general_preference.txt").read()
-prompt_chinaware_preference_statement = open("prompt/describe_chinaware_preference.txt").read()
+policy_prompt = open_utf8("prompt/policy.txt").read()
 
-prompt_general_vote = open("prompt/vote_general.txt").read()
-prompt_chinaware_vote = open("prompt/vote_chinaware.txt").read()
+prompt_general_statement = open_utf8("prompt/describe_general.txt").read()
+prompt_chinaware_statement = open_utf8("prompt/describe_chinaware.txt").read()
+prompt_general_preference_statement = open_utf8("prompt/describe_general_preference.txt").read()
+prompt_chinaware_preference_statement = open_utf8("prompt/describe_chinaware_preference.txt").read()
 
-chinaware_knowledge = open("prompt/knowledge.txt").read()
+prompt_general_vote = open_utf8("prompt/vote_general.txt").read()
+prompt_chinaware_vote = open_utf8("prompt/vote_chinaware.txt").read()
+
+chinaware_knowledge = open_utf8("prompt/knowledge.txt").read()
 
 
 
@@ -72,7 +78,7 @@ def build_statement_prompt(word:str,user_id,turn_id,history:list[dict],is_about_
 def build_vote_prompt(word:str,user_id,turn_id,history:list[dict],active_players:list[str],is_about_chinaware=False):
     assert isinstance(active_players,list),active_players
     if is_about_chinaware:
-        return prompt_general_vote.format(
+        return prompt_chinaware_vote.format(
             policy=policy_prompt, 
             word=word, 
             uid=user_id, 
@@ -101,6 +107,32 @@ class Player(BaseModel):
     vote_history: list[dict] = Field(default_factory=lambda :[])
 
 
+
+class MyString:
+    def __init__(self,gen:Iterable[str],player:Player,msg_type="thinking"):
+        self.gen = gen  
+        self.player = player 
+        self.msg_type = msg_type
+        self.s = ""
+        self.is_gen_close = False
+    
+    def __iter__(self):
+        if  not self.is_gen_close:
+            for i in self.gen:
+                self.s += i['chunk']
+                yield i['chunk']
+            logger.info("\n" + f"{self.msg_type}: {self.s}")
+            self.is_gen_close = True
+        else:
+            yield self.s
+        
+    def __str__(self):
+        return self.s 
+
+    __repr__ = __str__
+
+    
+
 class WhoIsUndercover:
     def __init__(self,
                  player_num=6,
@@ -116,11 +148,13 @@ class WhoIsUndercover:
                         "anthropic_version": "bedrock-2023-05-31"
                 },
                 is_about_chinaware=False,
-                second_agent_prefer_words=None
+                second_agent_prefer_words=None,
+                stream=True
                 ) -> None:
         assert player_num > 2, player_num
         self.second_agent_prefer_words = second_agent_prefer_words
         self.is_about_chinaware = is_about_chinaware
+        self.stream = stream
         self.player_num = player_num
         self.common_word = common_word
         self.undercover_word = undercover_word
@@ -175,20 +209,118 @@ class WhoIsUndercover:
         return llm
 
     
-    def call_llm(self,prompt:str,prefill=""):
+    def call_llm(self,prompt:str,prefill="",stream=True):
         messages = [HumanMessage(content=prompt)]
         if prefill:
             messages.append(AIMessage(content=prefill))
-        r = self.llm.invoke(messages)
-        return r.content
+        
+        if stream:
+            return self.llm.stream(messages)
+        else:
+            r = self.llm.invoke(messages)
+            return r.content
 
 
     def collect_history(self):
         history = [{} for _ in range(self.current_turn)]
         for player in self.players:
             for his in player.history:
-                history[his['turn']-1][player.player_id] = his['statement']
+                history[his['turn']-1][player.player_id] = str(his['statement'])
         return history
+
+    @staticmethod 
+    def check_subendwiths(cur_s:str,end_s:str):
+        for i in range(1,len(end_s)+1):
+            if cur_s.endswith(end_s[:i]):
+                return True
+        return False
+
+
+    def llm_stream_helper(self,res:Iterable):
+        """
+        分别返回thinking和output迭代器
+
+        Args:
+            res (Iterable): _description_
+        """
+        thinking_queue = Queue()
+        output_queue = Queue()
+        
+        def _inner():
+            thinking_close_flag = False
+            output_start_flag = False 
+            # output_close_flag = False 
+            current_str = ""
+            for r in res:
+                current_str += r.content
+                if not thinking_close_flag:
+                    # 还处于thinking中
+                    if self.check_subendwiths(current_str,"</thinking>"):
+                        if "</thinking>" in current_str:
+                            # 到了thinking 结尾
+                            thinking_close_flag = True
+                            splits = current_str.split("</thinking>")
+                            thinking_queue.put({
+                                    "type":"thinking",
+                                    "chunk": splits[0]
+                                })
+                            
+                            thinking_queue.put(None)
+                            
+                            current_str = splits[1]
+                    else:
+                        thinking_queue.put({
+                                    "type":"thinking",
+                                    "chunk": current_str
+                                })
+                        current_str = ""
+                else:
+                    # 处于output中
+                    if not output_start_flag:
+                        if "<output>" in current_str:
+                            # 开始进行output输出
+                            output_start_flag = True 
+                            splits = current_str.split('<output>')
+                            # output_queue.put({
+                            #     "type":"output",
+                            #     "chunk": splits[-1]
+                            # })
+                            current_str = splits[-1]
+                    else:
+                        if self.check_subendwiths(current_str,"</output>"):
+                            if "</output>" in current_str:
+                                # output_close_flag = True
+                                splits = current_str.split("</output>")
+                                output_queue.put({
+                                    "type":"output",
+                                    "chunk": splits[0]
+                                })
+                                output_queue.put(None)
+                                return 
+                        else:
+                            output_queue.put({
+                                    "type":"output",
+                                    "chunk": current_str
+                                })
+                            current_str = ""
+
+        def think_gen():
+            while True:
+                data = thinking_queue.get()
+                if data is None:
+                    break 
+                yield data
+        
+        def output_gen():
+            while True:
+                data = output_queue.get()
+                if data is None:
+                    break 
+                yield data
+
+        threading.Thread(target=_inner).start()
+        return think_gen(),output_gen()
+
 
     def player_statement(self, player:Player):
         word = player.word
@@ -206,29 +338,41 @@ class WhoIsUndercover:
             is_second_order=is_second_order,
             second_agent_prefer_words=self.second_agent_prefer_words
         )
-        content = self.call_llm(prompt,prefill="<thinking>")
-
-        result = '<thinking>' + content
-
-        thinking = re.findall("<thinking>(.*?)</thinking>",result,re.S)[0].strip()
-        statement = re.findall("<output>(.*?)</output>",result,re.S)[0].strip()
-         
-        player.history.append({
-            "turn": self.current_turn,
-            "statement": statement,
-            "thinking": thinking
-        })
-        logger.info(
-            "\n" + "="*25 + f"player: {player.player_id}, turn: {self.current_turn}, word: {player.word} " + "="*25 \
-            + "\n" + f"thinking: {thinking}" \
-            + "\n" + f"statement: {statement}"
+        logger.info(f"\n{prompt}")
+        content = self.call_llm(prompt,prefill="<thinking>",stream=self.stream)
+        
+        if not self.stream:
+            result = '<thinking>' + content
+            thinking = re.findall("<thinking>(.*?)</thinking>",result,re.S)[0].strip()
+            statement = re.findall("<output>(.*?)</output>",result,re.S)[0].strip()
+            
+            player.history.append({
+                "turn": self.current_turn,
+                "statement": statement,
+                "thinking": thinking
+            })
+            logger.info(
+                "\n" + "="*25 + f"player: {player.player_id}, turn: {self.current_turn}, word: {player.word} " + "="*25 \
+                + "\n" + f"thinking: {thinking}" \
+                + "\n" + f"statement: {statement}"
+                )
+            return statement
+        else:
+            think_g, output_g = self.llm_stream_helper(content)
+            logger.info(
+                "\n" + "="*25 + f"player: {player.player_id}, turn: {self.current_turn}, word: {player.word} statement" + "="*25 
             )
-        return statement
+            player.history.append({
+                "turn": self.current_turn,
+                "statement": MyString(output_g,player=player,msg_type="statement"),
+                "thinking": MyString(think_g,player=player,msg_type="thinking")
+            })
+            return output_g
+
 
     def player_vote(self, player:Player):
         word = player.word
         #  history
-
         prompt = build_vote_prompt(
             word=word,
             user_id=player.player_id,
@@ -237,22 +381,34 @@ class WhoIsUndercover:
             active_players=[f"user_{player_id}" for player_id in self.get_active_player_ids],
             is_about_chinaware=self.is_about_chinaware
         )
+        logger.info(f"\n{prompt}")
         content = self.call_llm(prompt,prefill="<thinking>")
-        result = '<thinking>' + content
-
-        thinking = re.findall("<thinking>(.*?)</thinking>",result, re.S)[0].strip()
-        vote = re.findall("<output>(.*?)</output>",result, re.S)[0].replace("user_","").strip()
-        player.vote_history.append({
-            "turn": self.current_turn,
-            "vote": vote,
-            "thinking": thinking
-        })
-        logger.info(
-            "\n" + "="*25 + f"player: {player.player_id}, turn: {self.current_turn}, word: {player.word} " + "="*25 \
-            + "\n" + f"thinking: {thinking}" \
-            + "\n" + f"vote: {vote}"
+        if not self.stream:
+            result = '<thinking>' + content
+            thinking = re.findall("<thinking>(.*?)</thinking>",result, re.S)[0].strip()
+            vote = re.findall("<output>(.*?)</output>",result, re.S)[0].replace("user_","").strip()
+            player.vote_history.append({
+                "turn": self.current_turn,
+                "vote": vote,
+                "thinking": thinking
+            })
+            logger.info(
+                "\n" + "="*25 + f"player: {player.player_id}, turn: {self.current_turn}, word: {player.word} " + "="*25 \
+                + "\n" + f"thinking: {thinking}" \
+                + "\n" + f"vote: {vote}"
+                )
+            return vote
+        else:
+            think_g, output_g = self.llm_stream_helper(content)
+            logger.info(
+                "\n" + "="*25 + f"player: {player.player_id}, turn: {self.current_turn}, word: {player.word} vote" + "="*25 
             )
-        return vote
+            player.vote_history.append({
+                "turn": self.current_turn,
+                "vote": MyString(output_g,player=player,msg_type="vote"),
+                "thinking": MyString(think_g,player=player,msg_type='thinking')
+            })
+            return output_g
 
 
     @property
@@ -264,7 +420,7 @@ class WhoIsUndercover:
         votes = defaultdict(int)
         for player in self.players:
             if player.vote_history[-1]['turn'] == self.current_turn:
-                votes[player.vote_history[-1]['vote']] += 1
+                votes[str(player.vote_history[-1]['vote']).replace("user_","")] += 1
         
         votes_sorted = sorted(list(votes.items()),key=lambda x:x[1],reverse=True)
         vote_res = votes_sorted[0][0]
@@ -294,7 +450,6 @@ class WhoIsUndercover:
         if len(self.get_active_player_ids) <= 3:
             self.game_status = f"当前Player数量小于等于3个，卧底 Player {undercover_player.player_id} 胜利！"
             return True 
-
         return False 
 
     
@@ -302,10 +457,11 @@ class WhoIsUndercover:
         for player in self.players:
             if not player.active:
                 continue
+            vote = self.player_vote(player)
             yield {
                   'player': player,
                   'current_turn': self.current_turn,
-                  'vote':self.player_vote(player)
+                #   'vote':
                 }
     
     def next_turn_statement(self):
@@ -317,5 +473,5 @@ class WhoIsUndercover:
             yield {
                   'player': player,
                   'current_turn': self.current_turn,
-                  'statement': statement
+                #   'statement': statement
                 }
