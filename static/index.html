@@ -132,11 +132,11 @@
                 resultPieces[agentId] = [];
             }
             if (MESSAGE_TYPE.includes(data.content_type)) {
-                resultPieces[agentId].push(JSON.stringify(data.content));
+                resultPieces[agentId].push(data.content);
             } else {
                 resultPieces[agentId].push(event.data);
+                resultPieces[agentId].push("<br>");
             }
-            resultPieces[agentId].push("<br>");
             let result = resultPieces[agentId].join("");
             $('#agent' + agentId).html(result + "<hr>");
         }

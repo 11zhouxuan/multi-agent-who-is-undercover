@@ -1,8 +1,6 @@
 import json
-import os
 import threading
-import traceback
-import asyncio,time
+import asyncio
 from typing import Dict
 import logging.config
 from fastapi import APIRouter, WebSocket , WebSocketDisconnect
@@ -38,6 +36,7 @@ async def begin(game: schemas.Game) -> schemas.CommonResponse:
         undercover_word=game.undercover_word,
         player_num=6,
         llm_model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        stream=True,
     )
     vote_event.clear()
     global prefer_words
@@ -54,6 +53,7 @@ def next_turn():
     asyncio.run(do_next_trun())
 
 async def do_next_trun():
+    logger.info(f"第{game_obj.current_turn}轮陈述开始")
     await broadcast(ContentEnum.TURN_SPEAK_BEGIN, {"TurnNumber":game_obj.current_turn})
 
     for player_statement in game_obj.next_turn_statement():
@@ -65,10 +65,20 @@ async def do_next_trun():
         await broadcast(ContentEnum.AGENT_SPEAK_BEGIN,{"SpeakAgentId":player.player_id})
 
         his = player.history[-1]
-        logger.info(his['statement'])
-        logger.info(f"**Thinking:** {his['thinking']}")
-        await unicast(player.player_id, ContentEnum.AGENT_SPEAK_THINKING, f"**Thinking:** {his['thinking']}")
-        await unicast(player.player_id, ContentEnum.AGENT_SPEAK, his['statement'])
+        if game_obj.stream:
+            logger.info("**Thinking:**")
+            await unicast(player.player_id, ContentEnum.AGENT_SPEAK_THINKING, f"**Thinking:**")
+            for current_thinking in his['thinking']:
+                await unicast(player.player_id, ContentEnum.AGENT_SPEAK_THINKING, current_thinking)
+            logger.info("**statement:**")
+            await unicast(player.player_id, ContentEnum.AGENT_SPEAK, f"**Speak:**")
+            for current_vote in his['statement']:
+                await unicast(player.player_id, ContentEnum.AGENT_SPEAK, current_vote)
+        else:
+            logger.info(f"**Thinking:** {his['thinking']}")
+            logger.info(his['statement'])
+            await unicast(player.player_id, ContentEnum.AGENT_SPEAK_THINKING, f"**Thinking:** {his['thinking']}")
+            await unicast(player.player_id, ContentEnum.AGENT_SPEAK, his['statement'])
         await broadcast(ContentEnum.AGENT_SPEAK_END,{"SpeakAgentId":player.player_id})
 
         # 第1轮设置Agent2的思考方向
@@ -86,17 +96,34 @@ async def do_next_trun():
 
     await broadcast(ContentEnum.TURN_SPEAK_END, {"TurnNumber":game_obj.current_turn})
 
-    await broadcast(ContentEnum.TURN_VOTE_BEGIN, {"TurnNumber":game_obj.current_turn})
     logger.info(f"第{game_obj.current_turn}轮投票开始")
+    await broadcast(ContentEnum.TURN_VOTE_BEGIN, {"TurnNumber":game_obj.current_turn})
 
     for player_vote in game_obj.next_turn_vote():
+        await broadcast(ContentEnum.AGENT_SPEAK_BEGIN,{"SpeakAgentId":player.player_id})
         player: Player = player_vote['player']
+        if player.active:
+            logger.info(f'Player {player.player_id} 开始投票。')
+        else:
+            continue
         await broadcast(ContentEnum.AGENT_VOTE_BEGIN,{"SpeakAgentId":player.player_id})
-        logger.info(f'Player {player.player_id} 投票给 Player {player_vote["vote"]}')
-        logger.info(f"**Thinking:** {player.vote_history[-1]['thinking']}")
-        await unicast(player.player_id, ContentEnum.AGENT_VOTE_THINKING, f"**Thinking:** {player.vote_history[-1]['thinking']}")
-        await unicast(player.player_id, ContentEnum.AGENT_VOTE, f'投票给 Player {player_vote["vote"]}')
-        logger.info(f'Player {player.player_id} 完成投票。')
+
+        his = player.vote_history[-1]
+        if game_obj.stream:
+            logger.info("**VoteThinking:**")
+            await unicast(player.player_id, ContentEnum.AGENT_VOTE_THINKING, f"**VoteThinking:**")
+            for current_thinking in his['thinking']:
+                await unicast(player.player_id, ContentEnum.AGENT_VOTE_THINKING, current_thinking)
+            logger.info("**Vote:**")
+            await unicast(player.player_id, ContentEnum.AGENT_VOTE, f"**Vote:**")
+            for current_vote in his['vote']:
+                await unicast(player.player_id, ContentEnum.AGENT_VOTE, current_vote)
+        else:
+            logger.info(f"**VoteThinking:** {his['thinking']}")
+            logger.info(f'Player {player.player_id} 投票给 Player {his["vote"]}')
+            await unicast(player.player_id, ContentEnum.AGENT_VOTE_THINKING, f"**Thinking:** {his['thinking']}")
+            await unicast(player.player_id, ContentEnum.AGENT_VOTE, f'投票给 Player {his["vote"]}')
+            logger.info(f'Player {player.player_id} 完成投票。')
         await broadcast(ContentEnum.AGENT_VOTE_END,{"SpeakAgentId":player.player_id})
         
     out_player = game_obj.execute_vote_result()
