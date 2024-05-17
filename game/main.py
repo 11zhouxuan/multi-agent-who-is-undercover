@@ -5,8 +5,9 @@ from typing import Dict
 import logging.config
 from fastapi import APIRouter, WebSocket , WebSocketDisconnect
 from common.constant import const
-from common.enum import ContentEnum
+from common.enum import ContentType, GameStatus
 from . import schemas
+from .my_exception import ResetException
 from who_is_undercover_backend import WhoIsUndercover,Player
 
 logging.config.fileConfig('logging.conf', disable_existing_loggers=False)
@@ -14,6 +15,8 @@ logger = logging.getLogger(const.LOGGER_API)
 router = APIRouter(prefix="/game", tags=["game"])
 
 websockets: Dict[str, WebSocket] = {}
+status = GameStatus.STOPED
+reset_event = threading.Event()
 game_obj: WhoIsUndercover = None
 vote_event = threading.Event()
 prefer_words: list[str] = []
@@ -26,9 +29,12 @@ def china_ware_words() -> list[schemas.ChinaWareWord]:
 
 
 @router.post("/begin", response_model=schemas.CommonResponse)
-async def begin(game: schemas.Game) -> schemas.CommonResponse:
+def begin(game: schemas.Game) -> schemas.CommonResponse:
     logger.info(game)
 
+    global status
+    status = GameStatus.RUNNING
+    reset_event.clear()
     global game_obj
     game_obj = WhoIsUndercover(
         is_about_chinaware=game.is_about_chinaware,
@@ -44,17 +50,27 @@ async def begin(game: schemas.Game) -> schemas.CommonResponse:
     global second_agent_prefer_words
     second_agent_prefer_words = None
 
-    await broadcast(ContentEnum.GAME_BEGIN)
+    broadcast(ContentType.GAME_BEGIN)
+
+    try:
+        while not game_obj.is_game_close():
+            next_turn()
+    except ResetException:
+        reset_event.set()
+        logger.info("发送reset")
+
     return schemas.CommonResponse(message="OK")
 
 
-@router.post("/next-turn")
 def next_turn():
-    asyncio.run(do_next_trun())
+    __speak()
+    __vote()
+    __check_game_end()
 
-async def do_next_trun():
+
+def __speak():
     logger.info(f"第{game_obj.current_turn}轮陈述开始")
-    await broadcast(ContentEnum.TURN_SPEAK_BEGIN, {"TurnNumber":game_obj.current_turn})
+    broadcast(ContentType.TURN_SPEAK_BEGIN, {"TurnNumber":game_obj.current_turn})
 
     for player_statement in game_obj.next_turn_statement():
         player:Player = player_statement['player']
@@ -62,28 +78,28 @@ async def do_next_trun():
             logger.info(f'Player {player.player_id} 开始陈述。')
         else:
             continue
-        await broadcast(ContentEnum.AGENT_SPEAK_BEGIN,{"SpeakAgentId":player.player_id})
+        broadcast(ContentType.AGENT_SPEAK_BEGIN,{"SpeakAgentId":player.player_id})
 
         his = player.history[-1]
         if game_obj.stream:
             logger.info("**Thinking:**")
-            await unicast(player.player_id, ContentEnum.AGENT_SPEAK_THINKING, f"**Thinking:**")
+            unicast(player.player_id, ContentType.AGENT_SPEAK_THINKING, f"**Thinking:**")
             for current_thinking in his['thinking']:
-                await unicast(player.player_id, ContentEnum.AGENT_SPEAK_THINKING, current_thinking)
+                unicast(player.player_id, ContentType.AGENT_SPEAK_THINKING, current_thinking)
             logger.info("**statement:**")
-            await unicast(player.player_id, ContentEnum.AGENT_SPEAK, f"**Speak:**")
+            unicast(player.player_id, ContentType.AGENT_SPEAK, f"**Speak:**")
             for current_vote in his['statement']:
-                await unicast(player.player_id, ContentEnum.AGENT_SPEAK, current_vote)
+                unicast(player.player_id, ContentType.AGENT_SPEAK, current_vote)
         else:
             logger.info(f"**Thinking:** {his['thinking']}")
             logger.info(his['statement'])
-            await unicast(player.player_id, ContentEnum.AGENT_SPEAK_THINKING, f"**Thinking:** {his['thinking']}")
-            await unicast(player.player_id, ContentEnum.AGENT_SPEAK, his['statement'])
-        await broadcast(ContentEnum.AGENT_SPEAK_END,{"SpeakAgentId":player.player_id})
+            unicast(player.player_id, ContentType.AGENT_SPEAK_THINKING, f"**Thinking:** {his['thinking']}")
+            unicast(player.player_id, ContentType.AGENT_SPEAK, his['statement'])
+        broadcast(ContentType.AGENT_SPEAK_END,{"SpeakAgentId":player.player_id})
 
         # 第1轮设置Agent2的思考方向
         if game_obj.is_about_chinaware and game_obj.current_turn == 1 and player.player_id == "1":
-            await unicast("2", ContentEnum.AGENT_SPEAK_CHOOSE, prefer_words)
+            unicast("2", ContentType.AGENT_SPEAK_CHOOSE, prefer_words)
 
             logger.info("等待选择")
             vote_event.wait(timeout=20)
@@ -94,51 +110,60 @@ async def do_next_trun():
                 logger.info("超时设置")
                 game_obj.second_agent_prefer_words = prefer_words[0]
 
-    await broadcast(ContentEnum.TURN_SPEAK_END, {"TurnNumber":game_obj.current_turn})
+    broadcast(ContentType.TURN_SPEAK_END, {"TurnNumber":game_obj.current_turn})
 
+
+def __vote():
     logger.info(f"第{game_obj.current_turn}轮投票开始")
-    await broadcast(ContentEnum.TURN_VOTE_BEGIN, {"TurnNumber":game_obj.current_turn})
+    broadcast(ContentType.TURN_VOTE_BEGIN, {"TurnNumber":game_obj.current_turn})
 
     for player_vote in game_obj.next_turn_vote():
-        await broadcast(ContentEnum.AGENT_SPEAK_BEGIN,{"SpeakAgentId":player.player_id})
         player: Player = player_vote['player']
         if player.active:
             logger.info(f'Player {player.player_id} 开始投票。')
         else:
             continue
-        await broadcast(ContentEnum.AGENT_VOTE_BEGIN,{"SpeakAgentId":player.player_id})
+        broadcast(ContentType.AGENT_VOTE_BEGIN,{"SpeakAgentId":player.player_id})
 
         his = player.vote_history[-1]
         if game_obj.stream:
             logger.info("**VoteThinking:**")
-            await unicast(player.player_id, ContentEnum.AGENT_VOTE_THINKING, f"**VoteThinking:**")
+            unicast(player.player_id, ContentType.AGENT_VOTE_THINKING, f"**VoteThinking:**")
             for current_thinking in his['thinking']:
-                await unicast(player.player_id, ContentEnum.AGENT_VOTE_THINKING, current_thinking)
+                unicast(player.player_id, ContentType.AGENT_VOTE_THINKING, current_thinking)
             logger.info("**Vote:**")
-            await unicast(player.player_id, ContentEnum.AGENT_VOTE, f"**Vote:**")
+            unicast(player.player_id, ContentType.AGENT_VOTE, f"**Vote:**")
             for current_vote in his['vote']:
-                await unicast(player.player_id, ContentEnum.AGENT_VOTE, current_vote)
+                unicast(player.player_id, ContentType.AGENT_VOTE, current_vote)
         else:
             logger.info(f"**VoteThinking:** {his['thinking']}")
             logger.info(f'Player {player.player_id} 投票给 Player {his["vote"]}')
-            await unicast(player.player_id, ContentEnum.AGENT_VOTE_THINKING, f"**Thinking:** {his['thinking']}")
-            await unicast(player.player_id, ContentEnum.AGENT_VOTE, f'投票给 Player {his["vote"]}')
+            unicast(player.player_id, ContentType.AGENT_VOTE_THINKING, f"**Thinking:** {his['thinking']}")
+            unicast(player.player_id, ContentType.AGENT_VOTE, f'投票给 Player {his["vote"]}')
             logger.info(f'Player {player.player_id} 完成投票。')
-        await broadcast(ContentEnum.AGENT_VOTE_END,{"SpeakAgentId":player.player_id})
+        broadcast(ContentType.AGENT_VOTE_END,{"SpeakAgentId":player.player_id})
         
     out_player = game_obj.execute_vote_result()
     logger.info(f'Player {out_player.player_id} 被投票出局！')
-    await broadcast(ContentEnum.TURN_VOTE_END, {"TurnNumber":game_obj.current_turn,"OutAgentId":out_player.player_id})
+    broadcast(ContentType.TURN_VOTE_END, {"TurnNumber":game_obj.current_turn,"OutAgentId":out_player.player_id})
     
     game_obj.current_turn += 1
+
+
+def __check_game_end():
     if game_obj.is_game_close():
         logger.info(f'游戏结束')
         logger.info(game_obj.game_status)
         logger.info(f'平民词: {game_obj.common_word}, 卧底词: {game_obj.undercover_word}')
-        await broadcast(ContentEnum.GAME_END, {"Status":game_obj.game_status,
-                                               "CommonWord":game_obj.common_word,
-                                               "UndercoverWord":game_obj.undercover_word,
-                                               })
+        undercover_player = game_obj.get_undercover_player()
+        broadcast(ContentType.GAME_END, {"Status":game_obj.game_status,
+                                         "CommonWord":game_obj.common_word,
+                                         "UndercoverWord":game_obj.undercover_word,
+                                         "UndercoverPlayerId":undercover_player.player_id,
+                                         "UndercoverActive":undercover_player.active,
+                                        })
+        global status
+        status = GameStatus.STOPED
 
 
 @router.post("/second-agent-prefer-words", response_model=schemas.CommonResponse)
@@ -147,6 +172,22 @@ def second_agent_prefer_words(prefer_words_in: str) -> schemas.CommonResponse:
     global second_agent_prefer_words
     second_agent_prefer_words = prefer_words_in
     vote_event.set()
+    return schemas.CommonResponse(message="OK")
+
+
+@router.post("/reset", response_model=schemas.CommonResponse)
+def reset() -> schemas.CommonResponse:
+    global status
+    logger.info(f"Game status:{status.value}")
+    if status == GameStatus.RUNNING:
+        status = GameStatus.STOPPING
+        logger.info("Game stopping")
+        reset_event.wait(timeout=20)
+        if reset_event.is_set():
+            status = GameStatus.STOPED
+        else:
+            status = GameStatus.STOPED
+        logger.info("Game stopped")
     return schemas.CommonResponse(message="OK")
 
 
@@ -162,7 +203,9 @@ async def websocket_endpoint(websocket: WebSocket, agent_id: str):
         logger.info(f"agent_id={agent_id},{websocket.client.host}:{websocket.client.port} disconnected.")
 
 
-async def unicast(agent_id: str, content_type: ContentEnum, content=None):
+def unicast(agent_id: str, content_type: ContentType, content=None):
+    if status == GameStatus.STOPPING:
+        raise ResetException()
     websocket = websockets[agent_id]
     content_obj = {
         "agent_id": agent_id,
@@ -170,9 +213,9 @@ async def unicast(agent_id: str, content_type: ContentEnum, content=None):
         "content": content,
     }
     final_content = json.dumps(content_obj)
-    await websocket.send_text(final_content)
+    asyncio.run(websocket.send_text(final_content))
 
 
-async def broadcast(content_type: ContentEnum, content=None):
+def broadcast(content_type: ContentType, content=None):
     for agent_id in websockets:
-        await unicast(agent_id, content_type, content)
+        unicast(agent_id, content_type, content)

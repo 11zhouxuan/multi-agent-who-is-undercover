@@ -22,8 +22,9 @@
         <div class="row">
             <div id="buttons" class="col-12">
                 <input type="button" id="buttonNewGame" onclick="newGame();" value="New Game">
-                <input type="button" id="buttonNextTurn" onclick="nextTurn();" value="Next Turn">
+                <!-- <input type="button" id="buttonNextTurn" onclick="nextTurn();" value="Next Turn"> -->
                 <input type="button" id="buttonSecondAgent" onclick="secondAgent();" value="SecondAgent">
+                <input type="button" id="buttonReset" onclick="resetGame();" value="Reset Game">
                 <!-- <input type="button" id="buttonVote" onclick="vote();" value="Vote">
                 <input type="button" id="buttonTest" onclick="test();" value="Test"> -->
             </div>
@@ -58,12 +59,8 @@
             $.post("/game/second-agent-prefer-words?prefer_words_in=器形");
         }
 
-        function nextTurn() {
-            $.post("/game/next-turn");
-        }
-
-        function vote() {
-            $.post("/game/vote");
+        function resetGame() {
+            $.post("/game/reset");
         }
 
         const currentHostname = window.location.hostname;
