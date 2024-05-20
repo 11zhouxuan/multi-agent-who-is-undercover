@@ -5,6 +5,7 @@ from enum import Enum, unique
 class ContentType(Enum):
     GAME_BEGIN = "GameBegin"
     GAME_END = "GameEnd"
+    GAME_RESET = "GameReset"
     TURN_SPEAK_BEGIN = "TurnSpeakBegin"
     TURN_SPEAK_END = "TurnSpeakEnd"
     AGENT_SPEAK_BEGIN = "AgentSpeakBegin"
@@ -20,6 +21,7 @@ class ContentType(Enum):
     AGENT_VOTE_END = "AgentVoteEnd"
     EXCEPTION = "Exception"
     END = "End"
+    CUSTOM = "Custom"
 
 
 @unique

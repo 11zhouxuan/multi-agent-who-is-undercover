@@ -22,11 +22,9 @@
         <div class="row">
             <div id="buttons" class="col-12">
                 <input type="button" id="buttonNewGame" onclick="newGame();" value="New Game">
-                <!-- <input type="button" id="buttonNextTurn" onclick="nextTurn();" value="Next Turn"> -->
                 <input type="button" id="buttonSecondAgent" onclick="secondAgent();" value="SecondAgent">
                 <input type="button" id="buttonReset" onclick="resetGame();" value="Reset Game">
-                <!-- <input type="button" id="buttonVote" onclick="vote();" value="Vote">
-                <input type="button" id="buttonTest" onclick="test();" value="Test"> -->
+                <input type="button" id="buttonCustom" onclick="custom();" value="Custom">
             </div>
             <div id="agent1" class="col-6"></div>
             <div id="agent2" class="col-6"></div>
@@ -71,7 +69,7 @@
         const ws4 = new WebSocket(`ws://${currentHostname}:${currentPort}/game/ws/4`);
         const ws5 = new WebSocket(`ws://${currentHostname}:${currentPort}/game/ws/5`);
         const ws6 = new WebSocket(`ws://${currentHostname}:${currentPort}/game/ws/6`);
-        // const wscontroller = new WebSocket(`ws://${currentHostname}:${currentPort}/game/ws/controller`);
+        const wscontroller = new WebSocket(`ws://${currentHostname}:${currentPort}/game/ws/controller`);
 
         const buttonNewGame = document.getElementById('buttonNewGame');
         const buttonNextTurn = document.getElementById('buttonNextTurn');
@@ -125,7 +123,7 @@
                 return;
             }
             let agentId = data.agent_id;
-            if (data.content_type == "GameBegin") {
+            if (data.content_type == "GameBegin" || !(agentId in resultPieces)) {
                 resultPieces[agentId] = [];
             }
             if (MESSAGE_TYPE.includes(data.content_type)) {
@@ -136,6 +134,10 @@
             }
             let result = resultPieces[agentId].join("");
             $('#agent' + agentId).html(result + "<hr>");
+        }
+
+        function custom() {
+            wscontroller.send("my data");
         }
     </script>
 </body>

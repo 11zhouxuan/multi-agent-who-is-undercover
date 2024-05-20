@@ -58,6 +58,8 @@ def begin(game: schemas.Game) -> schemas.CommonResponse:
     except ResetException:
         reset_event.set()
         logger.info("发送reset")
+        status = GameStatus.STOPED
+        broadcast(ContentType.GAME_RESET)
 
     return schemas.CommonResponse(message="OK")
 
@@ -107,7 +109,7 @@ def __speak():
                 logger.info(f"接收到{second_agent_prefer_words}")
                 game_obj.second_agent_prefer_words = second_agent_prefer_words
             else:
-                logger.info("超时设置")
+                logger.info("超时设置Agent2思考方向")
                 game_obj.second_agent_prefer_words = prefer_words[0]
 
     broadcast(ContentType.TURN_SPEAK_END, {"TurnNumber":game_obj.current_turn})
@@ -189,6 +191,27 @@ def reset() -> schemas.CommonResponse:
             status = GameStatus.STOPED
         logger.info("Game stopped")
     return schemas.CommonResponse(message="OK")
+
+
+@router.websocket("/ws/controller")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    agent_id = "controller"
+    websockets[agent_id] = websocket
+    try:
+        while True:
+            data = await websocket.receive_text()
+            logger.info(f"agent_id:{agent_id},data={data}")
+            for current_agent_id, current_websocket in websockets.items():
+                content_obj = {
+                    "agent_id": current_agent_id,
+                    "content_type": ContentType.CUSTOM.value,
+                    "content": data,
+                }
+                final_content = json.dumps(content_obj)
+                await current_websocket.send_text(final_content)
+    except WebSocketDisconnect:
+        logger.info(f"agent_id={agent_id},{websocket.client.host}:{websocket.client.port} disconnected.")
 
 
 @router.websocket("/ws/{agent_id}")
