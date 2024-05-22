@@ -27,5 +27,6 @@ class ContentType(Enum):
 @unique
 class GameStatus(Enum):
     RUNNING = "Running"
+    PAUSED = "Paused"
     STOPPING = "Stopping"
     STOPED = "Stoped"

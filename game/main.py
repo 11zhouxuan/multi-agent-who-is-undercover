@@ -17,6 +17,7 @@ router = APIRouter(prefix="/game", tags=["game"])
 websockets: Dict[str, WebSocket] = {}
 status = GameStatus.STOPED
 reset_event = threading.Event()
+pause_event = threading.Event()
 game_obj: WhoIsUndercover = None
 vote_event = threading.Event()
 prefer_words: list[str] = []
@@ -35,6 +36,7 @@ def begin(game: schemas.Game) -> schemas.CommonResponse:
     global status
     status = GameStatus.RUNNING
     reset_event.clear()
+    pause_event.clear()
     global game_obj
     game_obj = WhoIsUndercover(
         is_about_chinaware=game.is_about_chinaware,
@@ -62,6 +64,16 @@ def begin(game: schemas.Game) -> schemas.CommonResponse:
         broadcast(ContentType.GAME_RESET)
 
     return schemas.CommonResponse(message="OK")
+
+
+def __check_pause():
+    if status == GameStatus.PAUSED:
+        logger.info("进入暂停")
+        pause_event.wait()
+        if pause_event.is_set():
+            logger.info("游戏继续")
+        else:
+            logger.info("游戏超时继续")
 
 
 def next_turn():
@@ -98,6 +110,8 @@ def __speak():
             unicast(player.player_id, ContentType.AGENT_SPEAK_THINKING, f"**Thinking:** {his['thinking']}")
             unicast(player.player_id, ContentType.AGENT_SPEAK, his['statement'])
         broadcast(ContentType.AGENT_SPEAK_END,{"SpeakAgentId":player.player_id})
+
+        __check_pause()
 
         # 第1轮设置Agent2的思考方向
         if game_obj.is_about_chinaware and game_obj.current_turn == 1 and player.player_id == "1":
@@ -144,6 +158,8 @@ def __vote():
             unicast(player.player_id, ContentType.AGENT_VOTE, f'投票给 Player {his["vote"]}')
             logger.info(f'Player {player.player_id} 完成投票。')
         broadcast(ContentType.AGENT_VOTE_END,{"SpeakAgentId":player.player_id})
+
+        __check_pause()
         
     out_player = game_obj.execute_vote_result()
     logger.info(f'Player {out_player.player_id} 被投票出局！')
@@ -190,6 +206,28 @@ def reset() -> schemas.CommonResponse:
         else:
             status = GameStatus.STOPED
         logger.info("Game stopped")
+    return schemas.CommonResponse(message="OK")
+
+
+@router.post("/pause", response_model=schemas.CommonResponse)
+def pause() -> schemas.CommonResponse:
+    global status
+    logger.info(f"Game status:{status.value}")
+    if status == GameStatus.RUNNING:
+        pause_event.clear()
+        status = GameStatus.PAUSED
+        logger.info("Game paused")
+    return schemas.CommonResponse(message="OK")
+
+
+@router.post("/continue", response_model=schemas.CommonResponse)
+def continue_game() -> schemas.CommonResponse:
+    global status
+    logger.info(f"Game status:{status.value}")
+    if status == GameStatus.PAUSED:
+        pause_event.set()
+        status = GameStatus.RUNNING
+        logger.info("Game running")
     return schemas.CommonResponse(message="OK")
 
 

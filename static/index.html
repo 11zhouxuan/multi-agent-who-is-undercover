@@ -25,6 +25,8 @@
                 <input type="button" id="buttonSecondAgent" onclick="secondAgent();" value="SecondAgent">
                 <input type="button" id="buttonReset" onclick="resetGame();" value="Reset Game">
                 <input type="button" id="buttonCustom" onclick="custom();" value="Custom">
+                <input type="button" id="buttonPauseGame" onclick="pauseGame();" value="Pause Game">
+                <input type="button" id="buttonContinueGame" onclick="continueGame();" value="Continue Game">
             </div>
             <div id="agent1" class="col-6"></div>
             <div id="agent2" class="col-6"></div>
@@ -59,6 +61,14 @@
 
         function resetGame() {
             $.post("/game/reset");
+        }
+
+        function pauseGame() {
+            $.post("/game/pause");
+        }
+
+        function continueGame() {
+            $.post("/game/continue");
         }
 
         const currentHostname = window.location.hostname;
