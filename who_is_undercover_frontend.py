@@ -52,7 +52,6 @@ with st.sidebar:
     is_stream = st.radio(label="是否使用流式输出",options=["是","否"])
 
 
-
 if "game_obj" not in st.session_state:
     st.session_state['game_obj'] = None
 

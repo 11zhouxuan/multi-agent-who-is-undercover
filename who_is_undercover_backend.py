@@ -3,6 +3,7 @@ dotenv.load_dotenv('.env')
 import random
 import uuid
 import time
+import re
 from pydantic import BaseModel,Field
 from langchain_community.chat_models.bedrock import BedrockChat
 from langchain_core.messages import SystemMessage,AIMessage,HumanMessage 
@@ -31,6 +32,25 @@ prompt_chinaware_vote = open_utf8("prompt/vote_chinaware.txt").read()
 
 chinaware_knowledge = open_utf8("prompt/knowledge.txt").read()
 
+def parse_xml_knowledge_to_dict(path="prompt/knowledge_map.txt"):
+    s = open_utf8(path).read()
+    ret = re.findall('<knowledges>(.*?)</knowledges>',s,re.S)
+    assert len(ret) == 1, ret 
+    _ret = re.findall('<knowledge>(.*?)</knowledge>',ret[0],re.S)
+    assert _ret,_ret
+    ret = {}
+    for r in _ret:
+        try:
+            name = re.findall("<name>(.*?)</name>",r,re.S)[0].strip()
+            content = re.findall("<content>(.*?)</content>",r,re.S)[0].strip()
+            ret[name] = content  
+        except:
+            print(r)
+            raise
+
+    return ret 
+
+chinaware_knowledge_map = parse_xml_knowledge_to_dict()
 
 
 def format_history(history:list[dict]):
@@ -45,7 +65,7 @@ def format_history(history:list[dict]):
     return cur_history
 
 
-def build_statement_prompt(word:str,user_id,turn_id,history:list[dict],is_about_chinaware=False,is_second_order=False,second_agent_prefer_words=None):
+def build_statement_prompt(word:str,user_id,turn_id,history:list[dict],is_about_chinaware=False,is_second_order=False,second_agent_prefer_words=None,knowledge=None):
     if is_about_chinaware:
         if is_second_order:
             logger.info(f'第一轮第二个Agent偏好: {second_agent_prefer_words},user_id: {user_id}')
@@ -56,7 +76,7 @@ def build_statement_prompt(word:str,user_id,turn_id,history:list[dict],is_about_
                 history=format_history(history).strip(), 
                 turn_id=turn_id,
                 preference=second_agent_prefer_words,
-                knowledge = chinaware_knowledge
+                knowledge = knowledge
             )
         else:
             return prompt_chinaware_statement.format(
@@ -65,7 +85,7 @@ def build_statement_prompt(word:str,user_id,turn_id,history:list[dict],is_about_
                 uid=user_id, 
                 history=format_history(history).strip(), 
                 turn_id=turn_id,
-                knowledge = chinaware_knowledge
+                knowledge = knowledge
             )
         
     else:
@@ -77,7 +97,7 @@ def build_statement_prompt(word:str,user_id,turn_id,history:list[dict],is_about_
             turn_id=turn_id
             )
 
-def build_vote_prompt(word:str,user_id,turn_id,history:list[dict],active_players:list[str],is_about_chinaware=False):
+def build_vote_prompt(word:str,user_id,turn_id,history:list[dict],active_players:list[str],is_about_chinaware=False,user_outed="",knowledge=None):
     assert isinstance(active_players,list),active_players
     if is_about_chinaware:
         return prompt_chinaware_vote.format(
@@ -87,7 +107,8 @@ def build_vote_prompt(word:str,user_id,turn_id,history:list[dict],active_players
             history=format_history(history).strip(), 
             turn_id=turn_id,
             active_players="\n".join(active_players),
-            knowledge = chinaware_knowledge
+            knowledge = knowledge,
+            user_outed=user_outed
         )
     else:
         return prompt_general_vote.format(
@@ -97,6 +118,7 @@ def build_vote_prompt(word:str,user_id,turn_id,history:list[dict],active_players
             history=format_history(history).strip(), 
             turn_id=turn_id,
             active_players="\n".join(active_players),
+            user_outed=user_outed
             )
 
 class Player(BaseModel):
@@ -107,7 +129,6 @@ class Player(BaseModel):
     history: list[dict] = Field(default_factory=lambda :[])
     is_undercover: bool
     vote_history: list[dict] = Field(default_factory=lambda :[])
-
 
 
 class MyString:
@@ -161,6 +182,11 @@ class WhoIsUndercover:
         self.common_word = common_word
         self.undercover_word = undercover_word
         words = [common_word]*(player_num-1) + [undercover_word]
+        if self.is_about_chinaware:
+            self.knowledge = chinaware_knowledge_map[f'{self.undercover_word}-{self.common_word}']
+            logger.info(f'knowledge:\n {self.knowledge}')
+        else:
+            self.knowledge = None
         random.shuffle(words)
 
         self.players:list[Player] = []
@@ -215,9 +241,11 @@ class WhoIsUndercover:
             return r.content
 
 
-    def collect_history(self):
+    def collect_history(self,filter_out=True):
         history = [{} for _ in range(self.current_turn)]
         for player in self.players:
+            if filter_out and not player.active:
+                continue
             for his in player.history:
                 history[his['turn']-1][player.player_id] = str(his['statement'])
         return history
@@ -330,7 +358,8 @@ class WhoIsUndercover:
             history=self.collect_history(),
             is_about_chinaware=self.is_about_chinaware,
             is_second_order=is_second_order,
-            second_agent_prefer_words=self.second_agent_prefer_words
+            second_agent_prefer_words=self.second_agent_prefer_words,
+            knowledge=self.knowledge
         )
         # logger.info(f"\n{prompt}")
         content = self.call_llm(prompt,prefill="<thinking>",stream=self.stream)
@@ -363,7 +392,11 @@ class WhoIsUndercover:
             })
             return output_g
 
-
+    @property
+    def get_user_outed(self):
+        users_outed = [f"user_{p.player_id}" for p in self.players if not p.active]
+        return ",".join(users_outed)
+        
     def player_vote(self, player:Player):
         word = player.word
         #  history
@@ -372,10 +405,15 @@ class WhoIsUndercover:
             user_id=player.player_id,
             turn_id=self.current_turn,
             history=self.collect_history(),
-            active_players=[f"user_{player_id}" for player_id in self.get_active_player_ids],
-            is_about_chinaware=self.is_about_chinaware
+            # current player is not included in "active_players" list
+            active_players=[f"user_{player_id}" for player_id in self.get_active_player_ids if player_id != player.player_id],
+            is_about_chinaware=self.is_about_chinaware,
+            user_outed=self.get_user_outed,
+            knowledge=self.knowledge
         )
-        # logger.info(f"\n{prompt}")
+
+        logger.info(prompt)
+
         content = self.call_llm(prompt,prefill="<thinking>",stream=self.stream)
         if not self.stream:
             result = '<thinking>' + content
