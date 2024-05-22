@@ -1,5 +1,3 @@
-import dotenv
-dotenv.load_dotenv('.env')
 import streamlit as st
 import time
 import re

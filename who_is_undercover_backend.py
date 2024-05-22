@@ -1,3 +1,5 @@
+import dotenv
+dotenv.load_dotenv('.env')
 import random
 import uuid
 import time
