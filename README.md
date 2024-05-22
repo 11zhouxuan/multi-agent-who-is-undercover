@@ -2,9 +2,6 @@
 基于LLM multi agents的《谁是卧底》游戏模拟。
 
 
-## 安装
-```pip install -r requirements.txt```
-
 ## 定义AWS环境变量 
 - 在当前目录下生成 **.env** 文件
 
@@ -15,11 +12,20 @@
     ```
     AWS_ACCESS_KEY_ID=<your aws_access_key_id>
     AWS_SECRET_ACCESS_KEY=<your aws_secret_access_key>
-    AWS_REGION=<aws_region>
+    AWS_DEFAULT_REGION=<aws_region>
     ```
 
-## 运行
-```streamlit run who_is_undercover_frontend.py```
+## Streamlit方式运行
+```bash
+pip install -r requirements.txt
+streamlit run who_is_undercover_frontend.py
+```
+
+## API方式运行
+```bash
+pip install -r requirements-api.txt
+uvicorn main:app --reload
+```
 
 ## 游戏截图
 ### 游戏开始
