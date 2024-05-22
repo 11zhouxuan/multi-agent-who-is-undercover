@@ -12,7 +12,7 @@
     ```
     AWS_ACCESS_KEY_ID=<your aws_access_key_id>
     AWS_SECRET_ACCESS_KEY=<your aws_secret_access_key>
-    AWS_REGION=<aws_region>
+    AWS_DEFAULT_REGION=<aws_region>
     ```
 
 ## Streamlit方式运行

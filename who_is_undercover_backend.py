@@ -191,15 +191,7 @@ class WhoIsUndercover:
             )
 
     def create_llm_model(self,model_id,model_kwargs):
-        region = os.environ.get('AWS_REGION','us-west-2')
-        session = boto3.Session(
-            aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-            aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
-            region_name=region
-            )
-        client = session.client(
-                    "bedrock-runtime", region_name=region
-                )
+        client = boto3.client("bedrock-runtime")
         llm = BedrockChat(
             client=client,
             # credentials_profile_name="atl",
@@ -338,7 +330,7 @@ class WhoIsUndercover:
             is_second_order=is_second_order,
             second_agent_prefer_words=self.second_agent_prefer_words
         )
-        logger.info(f"\n{prompt}")
+        # logger.info(f"\n{prompt}")
         content = self.call_llm(prompt,prefill="<thinking>",stream=self.stream)
         
         if not self.stream:
@@ -381,8 +373,8 @@ class WhoIsUndercover:
             active_players=[f"user_{player_id}" for player_id in self.get_active_player_ids],
             is_about_chinaware=self.is_about_chinaware
         )
-        logger.info(f"\n{prompt}")
-        content = self.call_llm(prompt,prefill="<thinking>")
+        # logger.info(f"\n{prompt}")
+        content = self.call_llm(prompt,prefill="<thinking>",stream=self.stream)
         if not self.stream:
             result = '<thinking>' + content
             thinking = re.findall("<thinking>(.*?)</thinking>",result, re.S)[0].strip()
