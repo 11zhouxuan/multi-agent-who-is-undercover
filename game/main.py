@@ -4,14 +4,14 @@ import asyncio
 from typing import Dict
 import logging.config
 from fastapi import APIRouter, WebSocket , WebSocketDisconnect
-from common.constant import const
+from common import constant
 from common.enum import ContentType, GameStatus
 from . import schemas
 from .my_exception import ResetException
 from who_is_undercover_backend import WhoIsUndercover,Player
 
 logging.config.fileConfig('logging.conf', disable_existing_loggers=False)
-logger = logging.getLogger(const.LOGGER_API)
+logger = logging.getLogger(constant.LOGGER_API)
 router = APIRouter(prefix="/game", tags=["game"])
 
 websockets: Dict[str, WebSocket] = {}
@@ -26,7 +26,7 @@ second_agent_prefer_words: str = None
 
 @router.get("/china-ware-words", response_model=list[schemas.ChinaWareWord])
 def china_ware_words() -> list[schemas.ChinaWareWord]:
-    return const.CHINAWARE_WORDS_LIST
+    return constant.CHINAWARE_WORDS_LIST
 
 
 @router.post("/begin", response_model=schemas.CommonResponse)
