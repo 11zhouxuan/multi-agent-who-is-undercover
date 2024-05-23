@@ -40,24 +40,25 @@ def begin(game: schemas.Game) -> schemas.CommonResponse:
     status = GameStatus.RUNNING
     reset_event.clear()
     pause_event.clear()
-    global game_obj
-    game_obj = WhoIsUndercover(
-        is_about_chinaware=game.is_about_chinaware,
-        common_word=game.common_word,
-        undercover_word=game.undercover_word,
-        player_num=6,
-        llm_model_id="anthropic.claude-3-sonnet-20240229-v1:0",
-        stream=True,
-    )
-    vote_event.clear()
-    global prefer_words
-    prefer_words = game.prefer_words
-    global second_agent_prefer_words
-    second_agent_prefer_words = None
-
-    broadcast(ContentType.GAME_BEGIN)
 
     try:
+        global game_obj
+        game_obj = WhoIsUndercover(
+            is_about_chinaware=game.is_about_chinaware,
+            common_word=game.common_word,
+            undercover_word=game.undercover_word,
+            player_num=6,
+            llm_model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+            stream=True,
+        )
+        vote_event.clear()
+        global prefer_words
+        prefer_words = game.prefer_words
+        global second_agent_prefer_words
+        second_agent_prefer_words = None
+
+        broadcast(ContentType.GAME_BEGIN)
+
         while not game_obj.is_game_close():
             next_turn()
     except ResetException:
