@@ -34,6 +34,9 @@ def begin(game: schemas.Game) -> schemas.CommonResponse:
     logger.info(game)
 
     global status
+    if status != GameStatus.STOPED:
+        return schemas.CommonResponse(message="Error")
+
     status = GameStatus.RUNNING
     reset_event.clear()
     pause_event.clear()
@@ -115,7 +118,7 @@ def __speak():
 
         # 第1轮设置Agent2的思考方向
         if game_obj.is_about_chinaware and game_obj.current_turn == 1 and player.player_id == "1":
-            unicast("2", ContentType.AGENT_SPEAK_CHOOSE, prefer_words)
+            broadcast(ContentType.AGENT_SPEAK_CHOOSE, prefer_words)
 
             logger.info("等待选择")
             vote_event.wait(timeout=20)
