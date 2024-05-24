@@ -28,10 +28,10 @@
 你拿到的词语是：
 {word}
 
-下面是各个玩家的发言，你是user_{uid}
+下面是各个玩家的发言，你是agent_{uid}
 <history>
 {history}
 </history>
 
-现在是第{turn_id}轮游戏的描述环节（turn_{turn_id}），请先在<thinking></thinking>xml tag中写出你的分析，例如，你猜测每个玩家拿到了什么词；根据你拿到的词和其他玩家的词，判断你是普通玩家还是卧底。
+现在是第{turn_id}轮游戏的描述环节（turn_{turn_id}），请先在<thinking></thinking>xml tag中写出你的分析，分析过程要有条理，分别讨论每个玩家的情况。例如，你猜测每个玩家拿到了什么词；根据你拿到的词和其他玩家的词，判断你是普通玩家还是卧底。
 然后在<output></output>xml tag中给出你的描述。如果你认为自己是卧底，注意隐藏自己的身份。

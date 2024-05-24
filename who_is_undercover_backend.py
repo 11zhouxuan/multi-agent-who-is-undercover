@@ -58,7 +58,7 @@ def format_history(history:list[dict]):
     for his_idx, his_turn in enumerate(history):
         cur_turn = ''
         for his_user_idx,his_user_turn in his_turn.items():
-            cur_turn += f'<user_{his_user_idx}>\n{his_user_turn}\n</user_{his_user_idx}>\n'
+            cur_turn += f'<agent_{his_user_idx}>\n{his_user_turn}\n</agent_{his_user_idx}>\n'
         if len(cur_turn):
             cur_turn_history = f'<turn_{his_idx+1}>\n' + cur_turn + f'</turn_{his_idx+1}>'
             cur_history += '\n' + cur_turn_history
@@ -68,7 +68,7 @@ def format_history(history:list[dict]):
 def build_statement_prompt(word:str,user_id,turn_id,history:list[dict],is_about_chinaware=False,is_second_order=False,second_agent_prefer_words=None,knowledge=None):
     if is_about_chinaware:
         if is_second_order:
-            logger.info(f'第一轮第二个Agent偏好: {second_agent_prefer_words},user_id: {user_id}')
+            logger.info(f'第一轮第二个Agent偏好: {second_agent_prefer_words},agent_id: {user_id}')
             return prompt_general_preference_statement.format(
                 policy=policy_prompt, 
                 word=word, 
@@ -397,7 +397,7 @@ class WhoIsUndercover:
 
     @property
     def get_user_outed(self):
-        users_outed = [f"user_{p.player_id}" for p in self.players if not p.active]
+        users_outed = [f"agent_{p.player_id}" for p in self.players if not p.active]
         return ",".join(users_outed)
         
     def player_vote(self, player:Player):
@@ -409,7 +409,7 @@ class WhoIsUndercover:
             turn_id=self.current_turn,
             history=self.collect_history(),
             # current player is not included in "active_players" list
-            active_players=[f"user_{player_id}" for player_id in self.get_active_player_ids if player_id != player.player_id],
+            active_players=[f"agent_{player_id}" for player_id in self.get_active_player_ids if player_id != player.player_id],
             is_about_chinaware=self.is_about_chinaware,
             user_outed=self.get_user_outed,
             knowledge=self.knowledge
@@ -421,7 +421,7 @@ class WhoIsUndercover:
         if not self.stream:
             result = '<thinking>' + content
             thinking = re.findall("<thinking>(.*?)</thinking>",result, re.S)[0].strip()
-            vote = re.findall("<output>(.*?)</output>",result, re.S)[0].replace("user_","").strip()
+            vote = re.findall("<output>(.*?)</output>",result, re.S)[0].replace("agent_","").strip()
             player.vote_history.append({
                 "turn": self.current_turn,
                 "vote": vote,
@@ -455,7 +455,7 @@ class WhoIsUndercover:
         votes = defaultdict(int)
         for player in self.players:
             if player.vote_history[-1]['turn'] == self.current_turn:
-                votes[str(player.vote_history[-1]['vote']).replace("user_","")] += 1
+                votes[str(player.vote_history[-1]['vote']).replace("agent_","")] += 1
         
         votes_sorted = sorted(list(votes.items()),key=lambda x:x[1],reverse=True)
         vote_res = votes_sorted[0][0]
