@@ -105,9 +105,12 @@ def __speak():
             for current_thinking in his['thinking']:
                 unicast(player.player_id, ContentType.AGENT_SPEAK_THINKING, current_thinking)
             logger.info("**statement:**")
-            unicast(player.player_id, ContentType.AGENT_SPEAK, f"**Speak:**")
-            for current_vote in his['statement']:
-                unicast(player.player_id, ContentType.AGENT_SPEAK, current_vote)
+            # unicast(player.player_id, ContentType.AGENT_SPEAK, f"**Speak:**")
+            s = ""
+            for current_statement in his['statement']:
+                s += current_statement
+                # unicast(player.player_id, ContentType.AGENT_SPEAK, current_statement)
+            unicast(player.player_id, ContentType.AGENT_SPEAK, s)
         else:
             logger.info(f"**Thinking:** {his['thinking']}")
             logger.info(his['statement'])
@@ -152,9 +155,12 @@ def __vote():
             for current_thinking in his['thinking']:
                 unicast(player.player_id, ContentType.AGENT_VOTE_THINKING, current_thinking)
             logger.info("**Vote:**")
-            unicast(player.player_id, ContentType.AGENT_VOTE, f"**Vote:**")
+            # unicast(player.player_id, ContentType.AGENT_VOTE, f"**Vote:**")
+            s = ""
             for current_vote in his['vote']:
-                unicast(player.player_id, ContentType.AGENT_VOTE, current_vote)
+                # unicast(player.player_id, ContentType.AGENT_VOTE, current_vote)
+                s += current_vote
+            unicast(player.player_id, ContentType.AGENT_VOTE, s)
         else:
             logger.info(f"**VoteThinking:** {his['thinking']}")
             logger.info(f'Player {player.player_id} 投票给 Player {his["vote"]}')
