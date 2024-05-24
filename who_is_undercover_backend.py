@@ -183,8 +183,11 @@ class WhoIsUndercover:
         self.undercover_word = undercover_word
         words = [common_word]*(player_num-1) + [undercover_word]
         if self.is_about_chinaware:
+            # self.knowledge = chinaware_knowledge
             self.knowledge = chinaware_knowledge_map[f'{self.undercover_word}-{self.common_word}']
-            logger.info(f'knowledge:\n {self.knowledge}')
+            # self.knowledge = chinaware_knowledge_map[f'{self.undercover_word}-{self.common_word}']
+
+            # logger.info(f'knowledge:\n {self.knowledge}')
         else:
             self.knowledge = None
         random.shuffle(words)
@@ -361,7 +364,7 @@ class WhoIsUndercover:
             second_agent_prefer_words=self.second_agent_prefer_words,
             knowledge=self.knowledge
         )
-        # logger.info(f"\n{prompt}")
+        logger.info(f"\n{prompt}")
         content = self.call_llm(prompt,prefill="<thinking>",stream=self.stream)
         
         if not self.stream:

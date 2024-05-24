@@ -153,7 +153,6 @@ with buttons[1]:
 with buttons[2]:
     is_reset_game = st.button('Reset game',disabled=not st.session_state.is_new_game,on_click=reset_game)
 
-
 # print(is_new_game,is_next_turn,is_reset_game)
 
 if st.session_state.is_new_game:
@@ -165,8 +164,13 @@ if st.session_state.is_new_game:
             color = "green"
         else:
             color = "gray"
+        
+        if player.is_undercover:
+            player_name = f"{player.player_id}*"
+        else:
+            player_name = f"{player.player_id}"
 
-        tab_names.append(f':{color}[Player {player.player_id}]')
+        tab_names.append(f':{color}[Player {player_name}]')
 
     palyer_tabs = st.tabs(tab_names)
 
