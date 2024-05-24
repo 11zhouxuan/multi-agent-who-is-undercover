@@ -4,14 +4,14 @@ import asyncio
 from typing import Dict
 import logging.config
 from fastapi import APIRouter, WebSocket , WebSocketDisconnect
-from common.constant import const
+from common import constant
 from common.enum import ContentType, GameStatus
 from . import schemas
 from .my_exception import ResetException
 from who_is_undercover_backend import WhoIsUndercover,Player
 
 logging.config.fileConfig('logging.conf', disable_existing_loggers=False)
-logger = logging.getLogger(const.LOGGER_API)
+logger = logging.getLogger(constant.LOGGER_API)
 router = APIRouter(prefix="/game", tags=["game"])
 
 websockets: Dict[str, WebSocket] = {}
@@ -26,7 +26,7 @@ second_agent_prefer_words: str = None
 
 @router.get("/china-ware-words", response_model=list[schemas.ChinaWareWord])
 def china_ware_words() -> list[schemas.ChinaWareWord]:
-    return const.CHINAWARE_WORDS_LIST
+    return constant.CHINAWARE_WORDS_LIST
 
 
 @router.post("/begin", response_model=schemas.CommonResponse)
@@ -34,27 +34,31 @@ def begin(game: schemas.Game) -> schemas.CommonResponse:
     logger.info(game)
 
     global status
+    if status != GameStatus.STOPED:
+        return schemas.CommonResponse(message="Error")
+
     status = GameStatus.RUNNING
     reset_event.clear()
     pause_event.clear()
-    global game_obj
-    game_obj = WhoIsUndercover(
-        is_about_chinaware=game.is_about_chinaware,
-        common_word=game.common_word,
-        undercover_word=game.undercover_word,
-        player_num=6,
-        llm_model_id="anthropic.claude-3-sonnet-20240229-v1:0",
-        stream=True,
-    )
-    vote_event.clear()
-    global prefer_words
-    prefer_words = game.prefer_words
-    global second_agent_prefer_words
-    second_agent_prefer_words = None
-
-    broadcast(ContentType.GAME_BEGIN)
 
     try:
+        global game_obj
+        game_obj = WhoIsUndercover(
+            is_about_chinaware=game.is_about_chinaware,
+            common_word=game.common_word,
+            undercover_word=game.undercover_word,
+            player_num=6,
+            llm_model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+            stream=True,
+        )
+        vote_event.clear()
+        global prefer_words
+        prefer_words = game.prefer_words
+        global second_agent_prefer_words
+        second_agent_prefer_words = None
+
+        broadcast(ContentType.GAME_BEGIN)
+
         while not game_obj.is_game_close():
             next_turn()
     except ResetException:
@@ -101,9 +105,12 @@ def __speak():
             for current_thinking in his['thinking']:
                 unicast(player.player_id, ContentType.AGENT_SPEAK_THINKING, current_thinking)
             logger.info("**statement:**")
-            unicast(player.player_id, ContentType.AGENT_SPEAK, f"**Speak:**")
-            for current_vote in his['statement']:
-                unicast(player.player_id, ContentType.AGENT_SPEAK, current_vote)
+            # unicast(player.player_id, ContentType.AGENT_SPEAK, f"**Speak:**")
+            s = ""
+            for current_statement in his['statement']:
+                s += current_statement
+                # unicast(player.player_id, ContentType.AGENT_SPEAK, current_statement)
+            unicast(player.player_id, ContentType.AGENT_SPEAK, s)
         else:
             logger.info(f"**Thinking:** {his['thinking']}")
             logger.info(his['statement'])
@@ -115,7 +122,7 @@ def __speak():
 
         # 第1轮设置Agent2的思考方向
         if game_obj.is_about_chinaware and game_obj.current_turn == 1 and player.player_id == "1":
-            unicast("2", ContentType.AGENT_SPEAK_CHOOSE, prefer_words)
+            broadcast(ContentType.AGENT_SPEAK_CHOOSE, prefer_words)
 
             logger.info("等待选择")
             vote_event.wait(timeout=20)
@@ -148,9 +155,12 @@ def __vote():
             for current_thinking in his['thinking']:
                 unicast(player.player_id, ContentType.AGENT_VOTE_THINKING, current_thinking)
             logger.info("**Vote:**")
-            unicast(player.player_id, ContentType.AGENT_VOTE, f"**Vote:**")
+            # unicast(player.player_id, ContentType.AGENT_VOTE, f"**Vote:**")
+            s = ""
             for current_vote in his['vote']:
-                unicast(player.player_id, ContentType.AGENT_VOTE, current_vote)
+                # unicast(player.player_id, ContentType.AGENT_VOTE, current_vote)
+                s += current_vote
+            unicast(player.player_id, ContentType.AGENT_VOTE, s)
         else:
             logger.info(f"**VoteThinking:** {his['thinking']}")
             logger.info(f'Player {player.player_id} 投票给 Player {his["vote"]}')
