@@ -6,6 +6,7 @@ class ContentType(Enum):
     GAME_BEGIN = "GameBegin"
     GAME_END = "GameEnd"
     GAME_RESET = "GameReset"
+    MY_WORD = "MyWord"
     TURN_SPEAK_BEGIN = "TurnSpeakBegin"
     TURN_SPEAK_END = "TurnSpeakEnd"
     AGENT_SPEAK_BEGIN = "AgentSpeakBegin"

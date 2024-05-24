@@ -58,6 +58,7 @@ def begin(game: schemas.Game) -> schemas.CommonResponse:
         second_agent_prefer_words = None
 
         broadcast(ContentType.GAME_BEGIN)
+        __send_my_word()
 
         while not game_obj.is_game_close():
             next_turn()
@@ -79,6 +80,11 @@ def __check_pause():
         else:
             logger.info("游戏超时继续")
 
+
+def __send_my_word():
+    for player in game_obj.players:
+        logger.info(f"my word:{player.word}")
+        unicast(player.player_id, ContentType.MY_WORD, player.word)
 
 def next_turn():
     __speak()
