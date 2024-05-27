@@ -120,7 +120,7 @@ def next_turn():
                     for vote_s in player.vote_history[-1]["vote"]:
                         vote += vote_s
                     with st.container(border=True):
-                        st.write(f'Player {player.player_id} 投票给 Player {vote.replace("user_","")}')
+                        st.write(f'Player {player.player_id} 投票给 Player {vote.replace("user_","").replace("agent_","")}')
             st.toast(f'Player {player.player_id} 完成投票。')
          
         out_player = game_obj.execute_vote_result()
