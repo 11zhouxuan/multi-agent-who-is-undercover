@@ -69,7 +69,7 @@ def build_statement_prompt(word:str,user_id,turn_id,history:list[dict],is_about_
     if is_about_chinaware:
         if is_second_order:
             logger.info(f'第一轮第二个Agent偏好: {second_agent_prefer_words},agent_id: {user_id}')
-            return prompt_general_preference_statement.format(
+            return prompt_chinaware_preference_statement.format(
                 policy=policy_prompt, 
                 word=word, 
                 uid=user_id, 
